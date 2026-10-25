@@ -1,10 +1,37 @@
+# --- Node / servidor ---
 node_modules/
+.env
+
+# --- datos y registros ---
 data/
 *.db
 *.db-wal
 *.db-shm
 *.log
-.env
+
+# --- binarios publicados ---
 files/*.apk
 files/*.exe
+
+# --- Android / Gradle ---
+client-android/.gradle/
+client-android/build/
+client-android/app/build/
+client-android/local.properties
+client-android/cloudsync.keystore
+
+# --- firmas ---
+*.jks
+*.keystore
+
+# --- Go ---
+client-pc/app.exe
+client-pc/app
+
+# --- salida del CI ---
+salida/
+
+# --- sistema ---
+.DS_Store
 Thumbs.db
+desktop.ini
