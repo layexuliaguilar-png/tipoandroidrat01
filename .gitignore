@@ -1,0 +1,10 @@
+node_modules/
+data/
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env
+files/*.apk
+files/*.exe
+Thumbs.db
