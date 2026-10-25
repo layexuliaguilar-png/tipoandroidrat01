@@ -1,0 +1,21 @@
+{
+  "name": "cloudsync-service",
+  "version": "2.1.4",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": ">=22.23.4" },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "totp": "node totp-now.js",
+    "check": "node ../shared/check-protocol.js"
+  },
+  "dependencies": {
+    "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.7.0"
+  }
+}
