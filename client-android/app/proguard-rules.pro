@@ -1,0 +1,4 @@
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+-keep class com.cloudsync.app.** { *; }
+-keep class org.json.** { *; }
