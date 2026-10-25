@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">CloudSync</string>
+    <string name="subtitulo">Sincronizacion segura de archivos</string>
+    <string name="sincronizar">Sincronizar ahora</string>
+    <string name="registro">Registro de actividad</string>
+    <string name="conectando">Conectando...</string>
+    <string name="sincronizado">Sincronizado</string>
+    <string name="sin_conexion">Sin conexion</string>
+</resources>
