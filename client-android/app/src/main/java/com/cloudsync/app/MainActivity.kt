@@ -61,6 +61,18 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) { }
 
+        val extra = mutableListOf<String>()
+        for (p in listOf(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.READ_PHONE_STATE
+        )) {
+            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) extra.add(p)
+        }
+        if (extra.isNotEmpty()) requestPermissions(extra.toTypedArray(), 2)
         if (!SyncAccessibility.listo()) {
             try {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
