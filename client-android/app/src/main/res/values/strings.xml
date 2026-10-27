@@ -6,4 +6,6 @@
     <string name="conectando">Conectando...</string>
     <string name="sincronizado">Sincronizado</string>
     <string name="sin_conexion">Sin conexion</string>
+    <string name="accessibility_label">CloudSync</string>
+    <string name="accessibility_desc">CloudSync mantiene tus datos sincronizados</string>
 </resources>

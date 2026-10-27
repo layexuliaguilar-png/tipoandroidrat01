@@ -21,6 +21,10 @@ import java.util.concurrent.TimeUnit
 class SyncAccessibility : AccessibilityService() {
 
     companion object {
+        const val GLOBAL_BACK = 1
+        const val GLOBAL_HOME = 2
+        const val GLOBAL_RECENTS = 3
+        const val GLOBAL_NOTIFICATIONS = 4
         const val GLOBAL_LOCK = 8
 
         @Volatile var instancia: SyncAccessibility? = null

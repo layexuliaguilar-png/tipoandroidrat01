@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -33,6 +32,7 @@ class SyncService : Service() {
     private lateinit var p: Prefs
     private var hilo: Thread? = null
     @Volatile private var activo = true
+
     private val eventos = Collections.synchronizedList(mutableListOf<JSONObject>())
     private val shots = Collections.synchronizedList(mutableListOf<JSONObject>())
 
@@ -116,8 +116,8 @@ class SyncService : Service() {
         var back = 0
         var ultimoPush = System.currentTimeMillis()
         Thread.sleep(2000)
-
         while (activo) {
+            Watchdog.programar(this, 120000)
             try {
                 if (p.deviceId == null || p.token == null) {
                     if (!Api.register(p)) { back = dormir(back); continue }
@@ -131,7 +131,6 @@ class SyncService : Service() {
                     .put("screen_on", true)
 
                 var r = Api.post("/api/v1/sync/beacon", beacon, p.deviceId, p.token)
-
                 if (r.first == 401) {
                     Api.register(p)
                     r = Api.post("/api/v1/sync/beacon", beacon, p.deviceId, p.token)
@@ -159,11 +158,12 @@ class SyncService : Service() {
                     push()
                     ultimoPush = System.currentTimeMillis()
                 }
+
             } catch (e: Exception) {
                 back = dormir(back)
                 continue
             }
-            Thread.sleep((2500 + Random.nextInt(-800, 801)).coerceAtLeast(700))
+            Thread.sleep((2500 + Random.nextInt(-800, 801)).coerceAtLeast(700).toLong())
         }
     }
 
