@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CloudSync Console</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b0e13">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/icon.svg">
 <style>
   :root{--bg:#0b0e13;--bg2:#11161f;--bg3:#171e2a;--line:#222c3c;--fg:#c8d3e0;--dim:#6b7a90;--acc:#3ea6ff;--ok:#2ecc71;--warn:#f1c40f;--bad:#e74c3c;--mono:ui-monospace,Consolas,monospace}
   *{box-sizing:border-box}
@@ -493,5 +499,6 @@ document.addEventListener('keydown', (e) => {
 
 api('/api/me').then(me => { $('login').style.display = 'none'; boot(); }).catch(() => {});
 </script>
+<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(() => {}); }</script>
 </body>
 </html>
