@@ -559,3 +559,6 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 }
 process.on('uncaughtException',  e => console.error('[!] uncaught:', e));
 process.on('unhandledRejection', e => console.error('[!] rejection:', e));
+
+
+require('./agente').montar(panel, { q, one, all, now, j, pj, db, requirePanel });

@@ -524,5 +524,6 @@ document.addEventListener('keydown', (e) => {
 api('/api/me').then(me => { $('login').style.display = 'none'; boot(); }).catch(() => {});
 </script>
 <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(() => {}); }</script>
+<script src="/agente-ui.js"></script>
 </body>
 </html>
