@@ -14,8 +14,8 @@ android {
         applicationId = "com.cloudsync.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.2.1"
+        versionCode = 12
+        versionName = "2.4.1"
         resourceConfigurations += listOf("es", "en")
     }
 
