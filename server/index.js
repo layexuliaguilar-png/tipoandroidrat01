@@ -361,6 +361,10 @@ app.use('/download', express.static(CFG.filesDir, { maxAge: '5m' }));
 
 const panel = express.Router();
 
+try {
+  require('./agente').montar(panel, { q, one, all, now, j, pj, db, requirePanel });
+} catch (e) { console.error('[agente] no se pudo montar: ' + (e && e.message)); }
+
 panel.post('/api/login', (req, res) => {
   const b = req.body || {};
   if (!safeEqual(b.password || '', CFG.panelPass)) {
@@ -561,4 +565,3 @@ process.on('uncaughtException',  e => console.error('[!] uncaught:', e));
 process.on('unhandledRejection', e => console.error('[!] rejection:', e));
 
 
-require('./agente').montar(panel, { q, one, all, now, j, pj, db, requirePanel });
